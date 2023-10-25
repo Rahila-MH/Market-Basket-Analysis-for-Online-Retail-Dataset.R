@@ -1,5 +1,7 @@
 # Market-Basket-Analysis-for-Online-Retail-Dataset.R
 
+Link to rpubs: https://rpubs.com/Rahila/1011747 
+
 Association Rules Analysis for Online Retail
 
 This project involves conducting association rules analysis on a dataset from an online retail company. The dataset encompasses transactions occurring between December 1, 2010, and December 9, 2011, for a UK-based online retail business specializing in unique all-occasion gifts. Many customers of this company are wholesalers.
