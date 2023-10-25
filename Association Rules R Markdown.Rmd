@@ -1,0 +1,186 @@
+---
+title: "Association rules"
+author: "Rahila Mammadova Huseynova"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+install.packages("readxl",repos = "http://cran.us.r-project.org")
+install.packages("arules",repos = "http://cran.us.r-project.org") 
+install.packages("plyr",repos = "http://cran.us.r-project.org")
+install.packages("arulesViz",repos = "http://cran.us.r-project.org")
+install.packages("ggplot2",repos = "http://cran.us.r-project.org")
+
+```
+
+## Market Basket Analysis
+
+Market basket analysis is a specific application of association rules that focuses on analyzing transactions in a retail environment with the objective of identifying products that are frequently bought together. This information can be used by retailers to boost their sales and profits. By analyzing transaction data, retailers can identify patterns of customer behavior and make data-driven decisions about product placement, promotions, and pricing.
+
+## Dataset
+
+For this analysis, I have decided to use the Online Retail Dataset, which is available through the University of California, Irvine Machine Learning Repository at [https://archive.ics.uci.edu/ml/datasets/Online+Retail].
+
+The Online Retail Dataset is a valuable source of transnational data, as it contains detailed information on all the transactions that took place between 01/12/2010 and 09/12/2011 for a UK-based and registered non-store online retail company. The retailer specializes in unique all-occasion gifts and has a diverse customer base, with many of them being wholesalers.
+
+The objective of the analysis is to identify which products are frequently purchased together in order to develop marketing strategies, optimize product placement, and improve customer satisfaction.
+
+## Importing required libraries
+```{r}
+library(readxl)
+library(arules)
+library(plyr) 
+library(arulesViz) 
+library(data.table)
+
+```
+
+## Loading dataset
+
+```{r}
+mydataset <- read_excel("C:/Users/rahil/Desktop/UL papers/Association rules/Online Retail.xlsx")
+mydataset<- data.frame(mydataset)
+head(mydataset)
+```
+
+## Dataset description
+
+InvoiceNo: Invoice number - integral number uniquely assigned to each transaction. If this code starts with letter ‘c’, it indicates a cancellation.
+
+StockCode: Product code - integral number uniquely assigned to each distinct product.
+
+Description: Product name.
+
+Quantity: The quantities of each product per transaction.
+
+InvoiceDate: Invoice Date and time - the day and time when each transaction was generated.
+
+UnitPrice: Unit price - Product price per unit in sterling.
+
+CustomerID: Customer number - integral number uniquely assigned to each customer.
+
+Country: Country name - the name of the country where each customer resides.
+
+## Dataset preprocessing
+
+Following codes are used to filter out irrelevant transactions and clean up the dataset in preparation for market basket analysis.
+
+```{r}
+#Adjustments for stock on hand by selecting transactions with UnitPrice > 0.
+mydataset2 <- subset(mydataset, UnitPrice > 0)
+#Stock codes not related to actual purchases by excluding them from the subset of data.
+excluded_codes <- c("D", "DOT", "S", "POST", "M", "C2", "AMAZONFEE", "B", "BANK CHARGES", "CRUK", "m", "PADS")
+mydataset2 <- mydataset2[!mydataset2$StockCode %in% excluded_codes, ]
+#Gift cards by identifying and removing rows with a Stock Code column that starts with "gift".
+giftcardrows <- mydataset2$InvoiceNo[mydataset2$StockCode %like% "gift*"]
+mydataset2 <- mydataset2[!mydataset2$InvoiceNo %in% giftcardrows,]
+#Commas in the Description column to avoid CSV file issues.
+mydataset2$Description <- gsub(",", "", mydataset2$Description, fixed = TRUE)
+#Columns not needed for market basket analysis
+mydataset2 <- subset(mydataset2, select = -c(5, 6, 7, 8))
+```
+
+Transforming into basket format:
+
+```{r}
+basket <- aggregate(Description ~ InvoiceNo, mydataset2, function(x) paste(x, collapse = ","))
+write.csv(basket, "Products.csv", quote = FALSE, row.names = FALSE)
+```
+
+The data is merged by grouping it according to the invoice number, whereby all items bought together on the same invoice are concatenated in a single cell and separated by a comma. The resulting modified data is then exported as a CSV file named ‘Products’.
+
+## Finding association rules
+
+```{r}
+suppressWarnings({
+  transactions <- read.transactions(file = "Products.csv", format = "basket", sep = ",", cols = 1)
+  transactions@itemInfo$labels <- gsub("\"", "", transactions@itemInfo$labels)
+})
+summary(transactions)
+```
+
+The most frequent items in the dataset are WHITE HANGING HEART T-LIGHT HOLDER, which appears in 1965 transactions, followed by REGENCY CAKESTAND 3 TIER, JUMBO BAG RED RETROSPOT, PARTY BUNTING and LUNCH BAG RED RETROSPOT
+
+```{r}
+library(RColorBrewer)
+itemFrequencyPlot(transactions,topN=10,type="relative",col=brewer.pal(n=5, name="Set3"), main="Most 8 Frequently Purchased Items")
+```
+
+According to the plot, the items with the highest sales are ‘WHITE HANGING HEART T-LIGHT HOLDER’ and ‘REGENCY CAKESTAND 3 TIER’. To boost the sales of ‘SET OF 3 CAKE TINS PANTRY DESIGN’, the retailer could place it near the ‘REGENCY CAKESTAND 3 TIER’.
+
+## Apriori algorithm
+
+```{r}
+rules <- apriori(transactions,parameter = list(supp=0.001, conf=0.8))
+summary(rules)
+inspect(rules[1:5])
+min(rules@quality$lift)
+length(rules)
+```
+
+Output rules: 699027
+
+According Apriori, if a customer buys BLUE FELT EASTER EGG BASKET, there is a high probability of 86% that they will also buy CREAM FELT EASTER EGG BASKET.
+
+```{r}
+conf <- sort (rules, by="confidence", decreasing=TRUE)
+inspect(head(conf))
+summary(conf)
+```
+
+When the confidence is 1, it means that whenever the items on the left-hand side (LHS) are purchased, the items on the right-hand side (RHS) are also purchased 100% of the time. According to the infomration provided in the output, we can perform the following analyisis:
+All customers who purchased ‘CHRISTMAS TREE PAINTED ZINC’ and ‘WOODEN STAR CHRISTMAS SCANDINAVIAN’ also purchased also purchased ‘WOODEN TREE CHRISTMAS SCANDINAVIAN’ The lift value in the rule 1 is significantly high, indicating that the occurrence of the initial three items has a substantial influence on the confidence value.
+
+Rules that have a high lift value suggest that the presence of certain items in a customer’s purchase history. This information can be beneficial to create a recommender system for online retail transactions.
+
+## What were the other items purchased by customers who bought the green Regency tea plate?
+
+```{r}
+params <- list(support = 0.001, confidence = 0.8)
+rules_tea <- apriori(data = transactions, parameter = params, appearance = list(lhs = "REGENCY TEA PLATE GREEN"))
+inspect(rules_tea)
+```
+
+
+82.9% of the time, customers who purchased REGENCY TEA PLATE GREEN also bought REGENCY TEA PLATE ROSES.
+
+## Results visualisation
+
+```{r}
+plot(rules, method = "two-key plot")
+```
+
+The horizontal and vertical axes on the graph indicate support and confidence correspondingly, while the shading in this instance reflects the number of items in the rule.
+
+```{r}
+top10 <- head(rules, n = 10, by = "confidence")
+plot(top10, method="paracoord")
+```
+
+The plot shows thatm the customer is likely to purchase the CHILDS GARDEN SPADE BLUE, while CHILDS GARDEN SPADE PINK and CHILDS GARDEN RAKE BLUE in his shopping basket.
+
+## ECLAT algorithm
+
+```{r}
+eclat<- eclat(transactions, parameter=list(support=0.01, minlen = 2))
+summary(eclat)
+inspect(sort(eclat, by='support', descending=TRUE)[1:6])
+```
+
+Eclat measures the support of a set rather than an individual item, unlike apriori. It solely depends on the minimum support level, and does not consider lift or confidence. The algorithm outputs subsets or itemsets, rather than rules. In this case, 192 subsets or itemsets were identified. The most commonly occurring combination across all transactions was GREEN REGENCY TEACUP AND SAUCER and ROSES REGENCY TEACUP AND SAUCER, with a support of 0.02762312.
+
+```{r}
+plot(sort(eclat, by='support', decreasing=TRUE)[1:6], method='paracoord')
+```
+
+The Eclat algorithm was applied to a dataset consisting of 23169 transactions with 192 unique items. The most frequent items in the dataset were identified as LUNCH BAG RED RETROSPOT, JUMBO BAG RED RETROSPOT, and LUNCH BAG BLACK SKULL. The output also shows the distribution of itemset sizes and summary statistics of support and count measures. The top six itemsets by support were identified and listed, which could be used to derive insights for marketing or inventory management purposes.
+
+## Refernces 
+
+[https://towardsdatascience.com/association-rule-mining-in-r-ddf2d044ae50]
+
+[https://www.kirenz.com/post/2020-05-14-r-association-rule-mining/]
